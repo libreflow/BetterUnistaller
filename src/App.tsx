@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { ProgramList } from "./components/ProgramList";
 import { Toolbar } from "./components/Toolbar";
+import { computeSizes, onSizeComputed } from "./lib/api";
 import { applyFilters } from "./lib/filters";
 import { compareBy, matches } from "./lib/search";
 import { STR } from "./lib/strings.fr";
@@ -28,6 +29,25 @@ export default function App() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const un = onSizeComputed(({ id, sizeBytes }) =>
+      useProgramsStore.getState().patchProgram(id, { estimatedSizeBytes: sizeBytes })
+    );
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+
+  const loaded = programs.length > 0;
+  useEffect(() => {
+    if (!loaded) return;
+    const missing = useProgramsStore
+      .getState()
+      .programs.filter((p) => p.estimatedSizeBytes === null && p.installLocation !== null)
+      .map((p) => ({ id: p.id, path: p.installLocation! }));
+    if (missing.length > 0) void computeSizes(missing);
+  }, [loaded]); // volontairement déclenché une seule fois après le premier chargement
 
   const nowIso = new Date().toISOString().slice(0, 10);
   const visible = applyFilters(
