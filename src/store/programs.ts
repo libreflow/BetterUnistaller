@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listPrograms } from "../lib/api";
+import type { FilterId } from "../lib/filters";
 import type { SortDir, SortKey } from "../lib/search";
 import type { Program } from "../lib/types";
 import { STR } from "../lib/strings.fr";
@@ -12,11 +13,15 @@ interface ProgramsState {
   query: string;
   sortKey: SortKey;
   sortDir: SortDir;
+  activeFilters: Set<FilterId>;
+  showSystem: boolean;
   load: () => Promise<void>;
   select: (id: string | null) => void;
   patchProgram: (id: string, patch: Partial<Program>) => void;
   setQuery: (q: string) => void;
   setSort: (key: SortKey) => void;
+  toggleFilter: (id: FilterId) => void;
+  toggleShowSystem: () => void;
 }
 
 export const useProgramsStore = create<ProgramsState>((set) => ({
@@ -27,6 +32,8 @@ export const useProgramsStore = create<ProgramsState>((set) => ({
   query: "",
   sortKey: "name" as SortKey,
   sortDir: "asc" as SortDir,
+  activeFilters: new Set<FilterId>(),
+  showSystem: false,
   load: async () => {
     set({ loading: true, error: null });
     try {
@@ -41,6 +48,14 @@ export const useProgramsStore = create<ProgramsState>((set) => ({
       programs: s.programs.map((p) => (p.id === id ? { ...p, ...patch } : p)),
     })),
   setQuery: (query) => set({ query }),
+  toggleFilter: (id) =>
+    set((s) => {
+      const next = new Set(s.activeFilters);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { activeFilters: next };
+    }),
+  toggleShowSystem: () => set((s) => ({ showSystem: !s.showSystem })),
   // Re-cliquer la même colonne inverse le sens ; nouvelle colonne : asc pour
   // les textes, desc pour taille/date (usage le plus courant).
   setSort: (key) =>
