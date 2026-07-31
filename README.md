@@ -1,7 +1,20 @@
-# Tauri + React + Typescript
+# BetterUnistaller
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Désinstalleur Windows propre : désinstalle, puis nettoie ce que le
+désinstalleur officiel laisse derrière lui (fichiers, registre).
 
-## Recommended IDE Setup
+- Spécification : `docs/cahier-des-charges.md`
+- Plans d'implémentation : `docs/superpowers/plans/`
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Développement
+
+Prérequis : Node.js 20+, Rust stable, outillage Tauri 2 pour Windows.
+
+```powershell
+npm install
+npm run tauri dev          # application en mode dev
+npm test                   # tests frontend (Vitest)
+cd src-tauri; cargo test   # tests backend (Rust)
+```
+
+État : jalon M1 (inventaire) livré. Prochain jalon : M2 (désinstallation standard).
