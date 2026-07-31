@@ -11,6 +11,7 @@ export interface Program {
   uninstallString: string | null;
   quietUninstallString: string | null;
   displayIcon: string | null;
+  iconDataUri?: string;
   scope: Scope;
   isSystemEntry: boolean;
 }

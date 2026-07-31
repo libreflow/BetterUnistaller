@@ -22,3 +22,20 @@ export function computeSizes(requests: SizeRequest[]): Promise<void> {
 export function onSizeComputed(cb: (e: SizeComputed) => void): Promise<UnlistenFn> {
   return listen<SizeComputed>("size-computed", (event) => cb(event.payload));
 }
+
+export interface IconRequest {
+  id: string;
+  path: string;
+}
+export interface IconReady {
+  id: string;
+  dataUri: string;
+}
+
+export function loadIcons(requests: IconRequest[]): Promise<void> {
+  return invoke("load_icons", { requests });
+}
+
+export function onIconReady(cb: (e: IconReady) => void): Promise<UnlistenFn> {
+  return listen<IconReady>("icon-ready", (event) => cb(event.payload));
+}

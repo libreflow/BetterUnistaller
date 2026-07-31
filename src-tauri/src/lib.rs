@@ -10,7 +10,11 @@ fn list_programs() -> Vec<models::Program> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![list_programs, inventory::size::compute_sizes])
+        .invoke_handler(tauri::generate_handler![
+            list_programs,
+            inventory::size::compute_sizes,
+            inventory::icon::load_icons
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
