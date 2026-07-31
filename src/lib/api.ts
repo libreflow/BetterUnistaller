@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { Program } from "./types";
 
 export function listPrograms(): Promise<Program[]> {
@@ -38,4 +39,8 @@ export function loadIcons(requests: IconRequest[]): Promise<void> {
 
 export function onIconReady(cb: (e: IconReady) => void): Promise<UnlistenFn> {
   return listen<IconReady>("icon-ready", (event) => cb(event.payload));
+}
+
+export function openFolder(path: string): Promise<void> {
+  return revealItemInDir(path);
 }

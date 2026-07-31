@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { ProgramList } from "./components/ProgramList";
 import { Toolbar } from "./components/Toolbar";
+import { DetailPanel } from "./components/DetailPanel";
 import { computeSizes, loadIcons, onIconReady, onSizeComputed } from "./lib/api";
 import { applyFilters } from "./lib/filters";
 import { compareBy, matches } from "./lib/search";
@@ -71,6 +72,8 @@ export default function App() {
     nowIso
   ).sort(compareBy(sortKey, sortDir));
 
+  const selected = programs.find((p) => p.id === selectedId) ?? null;
+
   return (
     <main className="h-screen flex flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <header className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
@@ -85,19 +88,22 @@ export default function App() {
         showSystem={showSystem}
         onToggleShowSystem={toggleShowSystem}
       />
-      <section className="flex-1 overflow-auto">
-        {loading && <p className="p-6 text-neutral-500">{STR.loading}</p>}
-        {error && <p className="p-6 text-red-600">{error}</p>}
-        {!loading && !error && (
-          <ProgramList
-            programs={visible}
-            selectedId={selectedId}
-            onSelect={select}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            onSort={setSort}
-          />
-        )}
+      <section className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-auto">
+          {loading && <p className="p-6 text-neutral-500">{STR.loading}</p>}
+          {error && <p className="p-6 text-red-600">{error}</p>}
+          {!loading && !error && (
+            <ProgramList
+              programs={visible}
+              selectedId={selectedId}
+              onSelect={(id) => select(id === selectedId ? null : id)}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={setSort}
+            />
+          )}
+        </div>
+        {selected && <DetailPanel program={selected} />}
       </section>
     </main>
   );
