@@ -54,7 +54,11 @@ export default function App() {
     if (!loaded) return;
     const missing = useProgramsStore
       .getState()
-      .programs.filter((p) => p.estimatedSizeBytes === null && p.installLocation !== null)
+      .programs.filter(
+        (p) =>
+          (p.estimatedSizeBytes === null || p.estimatedSizeBytes === 0) &&
+          p.installLocation !== null
+      )
       .map((p) => ({ id: p.id, path: p.installLocation! }));
     if (missing.length > 0) void computeSizes(missing);
 

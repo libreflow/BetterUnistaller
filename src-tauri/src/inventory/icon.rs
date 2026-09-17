@@ -49,8 +49,8 @@ fn load_ico(path: &Path) -> Option<image::RgbaImage> {
 fn extract_exe_icon(path: &Path) -> Option<image::RgbaImage> {
     use windows::core::PCWSTR;
     use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SelectObject,
-        BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+        CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC,
+        SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
     };
     use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
     use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
@@ -86,7 +86,33 @@ fn extract_exe_icon(path: &Path) -> Option<image::RgbaImage> {
             return None;
         }
 
-        const SIZE: i32 = 32;
+        const TARGET: u32 = 32;
+
+        // SHGFI_LARGEICON n'est pas forcément 32x32 : à >=150% d'échelle
+        // d'affichage Windows retourne des icônes 48px, 64px... On interroge
+        // la bitmap réelle plutôt que de supposer 32x32, sous peine de
+        // GetDIBits qui produit une image tronquée/déformée.
+        let mut bitmap = BITMAP::default();
+        let got = GetObjectW(
+            icon_info.hbmColor.into(),
+            std::mem::size_of::<BITMAP>() as i32,
+            Some(&mut bitmap as *mut _ as *mut _),
+        );
+        if got == 0 {
+            let _ = DeleteObject(icon_info.hbmColor.into());
+            let _ = DeleteObject(icon_info.hbmMask.into());
+            let _ = DestroyIcon(hicon);
+            return None;
+        }
+        let width = bitmap.bmWidth;
+        let height = bitmap.bmHeight;
+        if width <= 0 || height <= 0 {
+            let _ = DeleteObject(icon_info.hbmColor.into());
+            let _ = DeleteObject(icon_info.hbmMask.into());
+            let _ = DestroyIcon(hicon);
+            return None;
+        }
+
         let screen_dc = GetDC(None);
         let mem_dc = CreateCompatibleDC(Some(screen_dc));
         let old = SelectObject(mem_dc, icon_info.hbmColor.into());
@@ -94,19 +120,19 @@ fn extract_exe_icon(path: &Path) -> Option<image::RgbaImage> {
         let mut bmi = BITMAPINFO::default();
         bmi.bmiHeader = BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: SIZE,
-            biHeight: -SIZE, // top-down
+            biWidth: width,
+            biHeight: -height, // top-down
             biPlanes: 1,
             biBitCount: 32,
             biCompression: BI_RGB.0,
             ..Default::default()
         };
-        let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
+        let mut pixels = vec![0u8; (width * height * 4) as usize];
         let lines = GetDIBits(
             mem_dc,
             icon_info.hbmColor,
             0,
-            SIZE as u32,
+            height as u32,
             Some(pixels.as_mut_ptr() as *mut _),
             &mut bmi,
             DIB_RGB_COLORS,
@@ -126,7 +152,12 @@ fn extract_exe_icon(path: &Path) -> Option<image::RgbaImage> {
         for px in pixels.chunks_exact_mut(4) {
             px.swap(0, 2);
         }
-        image::RgbaImage::from_raw(SIZE as u32, SIZE as u32, pixels)
+        let full = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
+        if width as u32 == TARGET && height as u32 == TARGET {
+            Some(full)
+        } else {
+            Some(image::imageops::thumbnail(&full, TARGET, TARGET))
+        }
     }
 }
 
