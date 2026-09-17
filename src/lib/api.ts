@@ -59,9 +59,25 @@ export interface ForceUninstallResult {
   succeeded: boolean;
 }
 
+export type ForceUninstallOutcome =
+  | { outcome: "completed"; result: ForceUninstallResult }
+  | { outcome: "elevationRequested" }
+  | { outcome: "failed"; message: string };
+
 /// Désinstallation forcée (F6) — destructive, réservée aux cas où la
 /// désinstallation standard a échoué ou est absente. L'appelant doit avoir
-/// obtenu une confirmation explicite de l'utilisateur au préalable.
-export function forceUninstall(program: Program): Promise<ForceUninstallResult> {
-  return invoke<ForceUninstallResult>("force_uninstall", { program });
+/// obtenu une confirmation explicite de l'utilisateur au préalable. Si le
+/// programme est machine-wide et nécessite l'élévation UAC, l'app se ferme
+/// pour relancer une instance élevée qui termine l'opération — l'appelant
+/// reçoit alors `{ outcome: "elevationRequested" }`.
+export function forceUninstall(program: Program): Promise<ForceUninstallOutcome> {
+  return invoke<ForceUninstallOutcome>("force_uninstall", { program });
+}
+
+/// À appeler une fois au démarrage : récupère le résultat d'une
+/// désinstallation forcée qui a motivé une relance élevée avant que
+/// l'utilisateur ne revoie l'interface. `null` si l'instance courante n'a pas
+/// été lancée pour reprendre une opération en attente.
+export function takePendingUninstallOutcome(): Promise<ForceUninstallOutcome | null> {
+  return invoke<ForceUninstallOutcome | null>("take_pending_uninstall_outcome");
 }

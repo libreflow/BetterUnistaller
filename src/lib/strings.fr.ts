@@ -29,4 +29,5 @@ export const STR = {
   forceUninstallFailure: "La désinstallation forcée a échoué.",
   forceUninstallProtected: (name: string) =>
     `« ${name} » est un composant protégé et ne peut pas être désinstallé de force.`,
+  forceUninstallElevationRequested: "Élévation des privilèges demandée…",
 } as const;

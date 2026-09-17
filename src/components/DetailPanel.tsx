@@ -2,8 +2,8 @@ import { useState } from "react";
 import type { Program } from "../lib/types";
 import { formatBytes, formatDate } from "../lib/format";
 import { forceUninstall, openFolder } from "../lib/api";
+import { applyOutcome } from "../lib/forceUninstallOutcome";
 import { STR } from "../lib/strings.fr";
-import { useProgramsStore } from "../store/programs";
 
 function TechRow({ label, value }: { label: string; value: string }) {
   return (
@@ -31,13 +31,8 @@ export function DetailPanel({ program }: { program: Program }) {
     setBusy(true);
     setFeedback(STR.forceUninstallInProgress);
     try {
-      const result = await forceUninstall(program);
-      if (result.succeeded) {
-        setFeedback(STR.forceUninstallSuccess);
-        useProgramsStore.getState().removeProgram(program.id);
-      } else {
-        setFeedback(STR.forceUninstallFailure);
-      }
+      const outcome = await forceUninstall(program);
+      applyOutcome(outcome, program.id, setFeedback);
     } catch (err) {
       setFeedback(err instanceof Error ? err.message : STR.forceUninstallFailure);
     } finally {

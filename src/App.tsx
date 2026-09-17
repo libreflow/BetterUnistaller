@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ProgramList } from "./components/ProgramList";
 import { Toolbar } from "./components/Toolbar";
 import { DetailPanel } from "./components/DetailPanel";
-import { computeSizes, loadIcons, onIconReady, onSizeComputed } from "./lib/api";
+import { computeSizes, loadIcons, onIconReady, onSizeComputed, takePendingUninstallOutcome } from "./lib/api";
 import { applyFilters } from "./lib/filters";
+import { applyOutcome } from "./lib/forceUninstallOutcome";
 import { compareBy, matches } from "./lib/search";
 import { STR } from "./lib/strings.fr";
 import { useProgramsStore } from "./store/programs";
@@ -30,6 +31,17 @@ export default function App() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const [pendingOutcomeMessage, setPendingOutcomeMessage] = useState<string | null>(null);
+  useEffect(() => {
+    void takePendingUninstallOutcome().then((outcome) => {
+      if (!outcome) return;
+      // programId=null : le programme concerné a déjà disparu de la liste
+      // rechargée par `load()` ci-dessus, retirer explicitement un id n'a
+      // pas de sens ici — seul le message de feedback compte.
+      applyOutcome(outcome, null, setPendingOutcomeMessage);
+    });
+  }, []);
 
   useEffect(() => {
     const un = onSizeComputed(({ id, sizeBytes }) =>
@@ -83,6 +95,9 @@ export default function App() {
       <header className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
         <h1 className="text-lg font-semibold">{STR.appTitle}</h1>
         <p className="text-sm text-neutral-500">{STR.programsCount(visible.length)}</p>
+        {pendingOutcomeMessage && (
+          <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">{pendingOutcomeMessage}</p>
+        )}
       </header>
       <Toolbar
         query={query}
