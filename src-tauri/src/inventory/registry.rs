@@ -1,4 +1,7 @@
-use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY};
+use winreg::enums::{
+    HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_ALL_ACCESS, KEY_READ, KEY_WOW64_32KEY,
+    KEY_WOW64_64KEY,
+};
 use winreg::RegKey;
 
 use crate::inventory::parse::{
@@ -73,6 +76,38 @@ fn read_entry(key: &RegKey, key_name: &str, scope: Scope, id_prefix: &str) -> Op
     })
 }
 
+/// Éclate un `Program::id` (`"HKLM64\\{key}"`, `"HKLM32\\{key}"`, `"HKCU\\{key}"`)
+/// produit par `read_hive` en (racine, flag WOW64, nom de sous-clé). Erreur si
+/// le préfixe est inconnu — protège `delete_uninstall_key` contre un id
+/// mal formé ou forgé côté frontend.
+fn resolve_id(id: &str) -> Result<(RegKey, u32, &str), String> {
+    let (prefix, key_name) = id
+        .split_once('\\')
+        .ok_or_else(|| format!("id de programme invalide : {id}"))?;
+    match prefix {
+        "HKLM64" => Ok((RegKey::predef(HKEY_LOCAL_MACHINE), KEY_WOW64_64KEY, key_name)),
+        "HKLM32" => Ok((RegKey::predef(HKEY_LOCAL_MACHINE), KEY_WOW64_32KEY, key_name)),
+        "HKCU" => Ok((RegKey::predef(HKEY_CURRENT_USER), 0, key_name)),
+        _ => Err(format!("id de programme invalide : {id}")),
+    }
+}
+
+/// Supprime la clé `Uninstall\{key_name}` correspondant à `id` (F6 —
+/// désinstallation forcée : suppression de la clé Uninstall après arrêt des
+/// processus et suppression de l'InstallLocation). Idempotent : une clé déjà
+/// absente n'est pas une erreur.
+pub fn delete_uninstall_key(id: &str) -> Result<(), String> {
+    let (root, wow_flag, key_name) = resolve_id(id)?;
+    let uninstall = root
+        .open_subkey_with_flags(UNINSTALL_PATH, KEY_ALL_ACCESS | wow_flag)
+        .map_err(|e| format!("ouverture de la clé Uninstall impossible : {e}"))?;
+    match uninstall.delete_subkey_all(key_name) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("suppression de la clé de registre impossible : {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,5 +127,51 @@ mod tests {
         let before = ids.len();
         ids.dedup();
         assert_eq!(before, ids.len(), "ids en double");
+    }
+
+    #[test]
+    fn resolve_id_parses_known_prefixes() {
+        let (_, wow, name) = resolve_id(r"HKLM64\Foo").unwrap();
+        assert_eq!((wow, name), (KEY_WOW64_64KEY, "Foo"));
+        let (_, wow, name) = resolve_id(r"HKLM32\Bar").unwrap();
+        assert_eq!((wow, name), (KEY_WOW64_32KEY, "Bar"));
+        let (_, wow, name) = resolve_id(r"HKCU\Baz").unwrap();
+        assert_eq!((wow, name), (0, "Baz"));
+    }
+
+    #[test]
+    fn resolve_id_rejects_unknown_prefix_or_missing_separator() {
+        assert!(resolve_id("Unknown\\Key").is_err());
+        assert!(resolve_id("NoSeparator").is_err());
+    }
+
+    /// Écrit une fausse entrée Uninstall dans HKCU (aucun droit admin requis),
+    /// vérifie que delete_uninstall_key la supprime, et que rappeler la
+    /// fonction sur une clé déjà absente reste un succès (idempotence).
+    #[test]
+    fn delete_uninstall_key_removes_hkcu_test_entry_and_is_idempotent() {
+        let key_name = "BU_delete_test_entry";
+        let id = format!(r"HKCU\{key_name}");
+
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let uninstall = hkcu
+            .open_subkey_with_flags(UNINSTALL_PATH, KEY_ALL_ACCESS)
+            .expect("HKCU\\...\\Uninstall doit exister sur toute machine Windows");
+        let (test_key, _) = uninstall.create_subkey(key_name).unwrap();
+        test_key.set_value("DisplayName", &"BU Test Entry").unwrap();
+        drop(test_key);
+
+        assert!(uninstall.open_subkey(key_name).is_ok());
+
+        delete_uninstall_key(&id).expect("suppression doit réussir");
+        assert!(uninstall.open_subkey(key_name).is_err());
+
+        // Idempotence : la clé n'existe déjà plus.
+        delete_uninstall_key(&id).expect("suppression d'une clé absente doit rester Ok");
+    }
+
+    #[test]
+    fn delete_uninstall_key_rejects_invalid_id() {
+        assert!(delete_uninstall_key("garbage").is_err());
     }
 }
