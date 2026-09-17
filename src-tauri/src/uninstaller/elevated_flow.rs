@@ -1,0 +1,94 @@
+use std::sync::Mutex;
+
+use serde::Serialize;
+
+use crate::models::Program;
+use crate::uninstaller::elevation;
+use crate::uninstaller::force::{self, ForceUninstallError, ForceUninstallResult};
+
+/// Résultat exposé au frontend pour une désinstallation forcée déclenchée
+/// depuis l'UI. Distinct de `ForceUninstallResult` : ajoute le cas
+/// "élévation demandée" (l'app va se fermer pour laisser place à l'instance
+/// élevée) qui n'est pas un échec à afficher comme tel.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "outcome")]
+pub enum ForceUninstallOutcome {
+    Completed { result: ForceUninstallResult },
+    ElevationRequested,
+    Failed { message: String },
+}
+
+/// État partagé entre l'instance non élevée (qui relance) et l'instance
+/// élevée (qui exécute la désinstallation en attente au démarrage, avant que
+/// l'utilisateur ne revoie l'interface). Le frontend de l'instance élevée
+/// interroge `take_pending_uninstall_outcome` une fois chargé pour afficher
+/// le résultat de l'opération qui a motivé la relance.
+#[derive(Default)]
+pub struct PendingUninstallState(pub Mutex<Option<ForceUninstallOutcome>>);
+
+/// Point d'entrée de la commande Tauri `force_uninstall` : exécute la
+/// désinstallation forcée si le process courant a déjà les privilèges
+/// requis, sinon demande l'élévation (relance + fermeture de l'instance
+/// courante) plutôt que d'échouer sèchement — cahier des charges §5.3.
+pub fn force_uninstall_or_request_elevation(
+    app: &tauri::AppHandle,
+    program: &Program,
+) -> ForceUninstallOutcome {
+    match force::force_uninstall(program) {
+        Ok(result) => ForceUninstallOutcome::Completed { result },
+        Err(ForceUninstallError::ElevationRequired) => {
+            match elevation::relaunch_elevated(&elevation::pending_uninstall_args(&program.id)) {
+                Ok(()) => {
+                    app.exit(0);
+                    ForceUninstallOutcome::ElevationRequested
+                }
+                Err(message) => ForceUninstallOutcome::Failed { message },
+            }
+        }
+        Err(ForceUninstallError::Other(message)) => ForceUninstallOutcome::Failed { message },
+    }
+}
+
+/// Exécuté au tout début du démarrage (avant l'affichage de la fenêtre) si
+/// l'instance a été relancée avec élévation pour terminer une désinstallation
+/// forcée en attente. Cherche le programme correspondant dans le registre
+/// (l'id seul a traversé la relance, pas l'objet `Program` complet) et
+/// exécute l'opération, dont le résultat est stocké pour être récupéré par
+/// le frontend une fois l'interface chargée.
+pub fn run_pending_uninstall_if_any(args: &[String]) -> Option<ForceUninstallOutcome> {
+    let id = elevation::extract_pending_uninstall_id(args)?;
+    let programs = crate::inventory::registry::read_installed_programs();
+    let Some(program) = programs.into_iter().find(|p| p.id == id) else {
+        return Some(ForceUninstallOutcome::Failed {
+            message: format!("programme introuvable après relance élevée : {id}"),
+        });
+    };
+    Some(match force::force_uninstall(&program) {
+        Ok(result) => ForceUninstallOutcome::Completed { result },
+        Err(err) => ForceUninstallOutcome::Failed {
+            message: err.to_string(),
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_pending_uninstall_if_any_returns_none_without_flag() {
+        let args = vec!["betterunistaller.exe".to_string()];
+        assert!(run_pending_uninstall_if_any(&args).is_none());
+    }
+
+    #[test]
+    fn run_pending_uninstall_if_any_reports_missing_program() {
+        let args = vec![
+            "betterunistaller.exe".to_string(),
+            elevation::PENDING_FORCE_UNINSTALL_FLAG.to_string(),
+            r"HKLM64\BU_definitely_not_installed_xyz".to_string(),
+        ];
+        let outcome = run_pending_uninstall_if_any(&args).expect("un id était présent");
+        assert!(matches!(outcome, ForceUninstallOutcome::Failed { .. }));
+    }
+}

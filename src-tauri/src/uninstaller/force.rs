@@ -1,6 +1,6 @@
 use crate::inventory::registry::delete_uninstall_key;
-use crate::models::Program;
-use crate::uninstaller::{cleanup, process, protection, restore_point};
+use crate::models::{Program, Scope};
+use crate::uninstaller::{cleanup, elevation, process, protection, restore_point};
 
 /// Étape du déroulement de la désinstallation forcée, reportée au frontend
 /// pour affichage progressif (F6 : "avertissement clair" avant l'action, ici
@@ -30,21 +30,60 @@ pub struct ForceUninstallResult {
     pub succeeded: bool,
 }
 
+/// Erreur distincte (plutôt qu'un `String` générique) pour le cas
+/// "élévation requise" : le frontend en a besoin pour proposer explicitement
+/// une relance élevée plutôt que d'afficher un message d'échec sec (cahier
+/// des charges §5.3 : "relance élevée de l'application sur demande, avec
+/// reprise du contexte").
+#[derive(Debug)]
+pub enum ForceUninstallError {
+    ElevationRequired,
+    Other(String),
+}
+
+impl std::fmt::Display for ForceUninstallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ElevationRequired => write!(
+                f,
+                "cette désinstallation forcée nécessite l'élévation des privilèges"
+            ),
+            Self::Other(message) => write!(f, "{message}"),
+        }
+    }
+}
+
+/// `true` si `program` exige l'élévation UAC pour être désinstallé de force
+/// (cahier des charges §5.3 : "les suppressions machine (HKLM, Program
+/// Files) [...] exigent l'élévation"). Les entrées `Scope::User` (HKCU)
+/// n'en ont jamais besoin.
+pub fn requires_elevation(program: &Program) -> bool {
+    program.scope == Scope::Machine
+}
+
 /// Désinstallation forcée d'un programme (F6). Séquence, dans l'ordre imposé
 /// par le cahier des charges : point de restauration obligatoire → arrêt des
 /// processus → suppression de l'InstallLocation (corbeille) → suppression de
-/// la clé Uninstall. Refuse d'agir sur un composant protégé (F7).
+/// la clé Uninstall. Refuse d'agir sur un composant protégé (F7), et refuse
+/// de démarrer sur un programme machine-wide si le process courant n'est pas
+/// élevé — mieux vaut échouer immédiatement et clairement que d'exécuter une
+/// suppression partielle (ex : processus tués mais clé Uninstall HKLM
+/// inaccessible, laissant le programme dans un état incohérent).
 ///
 /// Chaque étape individuelle est tolérante aux erreurs sauf la suppression
 /// finale de la clé de registre : c'est elle qui détermine si le programme
 /// disparaît de la liste, donc son échec fait échouer l'opération globale
 /// même si les étapes précédentes ont réussi.
-pub fn force_uninstall(program: &Program) -> Result<ForceUninstallResult, String> {
+pub fn force_uninstall(program: &Program) -> Result<ForceUninstallResult, ForceUninstallError> {
     if protection::is_protected(&program.name) {
-        return Err(format!(
+        return Err(ForceUninstallError::Other(format!(
             "« {} » fait partie des composants protégés et ne peut pas être désinstallé de force",
             program.name
-        ));
+        )));
+    }
+
+    if requires_elevation(program) && !elevation::is_elevated() {
+        return Err(ForceUninstallError::ElevationRequired);
     }
 
     let mut steps = Vec::new();
@@ -109,7 +148,17 @@ mod tests {
     fn refuses_to_force_uninstall_a_protected_component() {
         let p = program("Microsoft Edge WebView2 Runtime", r"HKCU\Whatever", None);
         let result = force_uninstall(&p);
-        assert!(result.is_err());
+        assert!(matches!(result, Err(ForceUninstallError::Other(_))));
+    }
+
+    #[test]
+    fn requires_elevation_only_for_machine_scope() {
+        let mut p = program("Foo", r"HKLM64\Foo", None);
+        p.scope = Scope::Machine;
+        assert!(requires_elevation(&p));
+
+        p.scope = Scope::User;
+        assert!(!requires_elevation(&p));
     }
 
     /// Test d'intégration : programme de test réel dans HKCU (aucun droit
