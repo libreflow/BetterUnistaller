@@ -44,3 +44,24 @@ export function onIconReady(cb: (e: IconReady) => void): Promise<UnlistenFn> {
 export function openFolder(path: string): Promise<void> {
   return revealItemInDir(path);
 }
+
+export type ForceUninstallStep =
+  | { step: "restorePointCreated" }
+  | { step: "restorePointFailed"; message: string }
+  | { step: "processesTerminated"; count: number }
+  | { step: "installLocationRemoved" }
+  | { step: "installLocationRemovalFailed"; message: string }
+  | { step: "registryKeyRemoved" }
+  | { step: "registryKeyRemovalFailed"; message: string };
+
+export interface ForceUninstallResult {
+  steps: ForceUninstallStep[];
+  succeeded: boolean;
+}
+
+/// Désinstallation forcée (F6) — destructive, réservée aux cas où la
+/// désinstallation standard a échoué ou est absente. L'appelant doit avoir
+/// obtenu une confirmation explicite de l'utilisateur au préalable.
+export function forceUninstall(program: Program): Promise<ForceUninstallResult> {
+  return invoke<ForceUninstallResult>("force_uninstall", { program });
+}

@@ -21,4 +21,12 @@ export const STR = {
   detailUninstallString: "Commande de désinstallation",
   detailNoLocation: "Emplacement inconnu",
   copy: "Copier",
+  forceUninstall: "Désinstallation forcée",
+  forceUninstallConfirm: (name: string) =>
+    `Désinstaller « ${name} » de force ? Un point de restauration système sera créé, les processus du programme seront arrêtés, puis ses fichiers et son entrée de registre seront supprimés. Cette action est réservée aux cas où la désinstallation normale a échoué.`,
+  forceUninstallInProgress: "Désinstallation forcée en cours…",
+  forceUninstallSuccess: "Programme désinstallé de force.",
+  forceUninstallFailure: "La désinstallation forcée a échoué.",
+  forceUninstallProtected: (name: string) =>
+    `« ${name} » est un composant protégé et ne peut pas être désinstallé de force.`,
 } as const;

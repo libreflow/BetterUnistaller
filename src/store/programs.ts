@@ -18,6 +18,7 @@ interface ProgramsState {
   load: () => Promise<void>;
   select: (id: string | null) => void;
   patchProgram: (id: string, patch: Partial<Program>) => void;
+  removeProgram: (id: string) => void;
   setQuery: (q: string) => void;
   setSort: (key: SortKey) => void;
   toggleFilter: (id: FilterId) => void;
@@ -46,6 +47,11 @@ export const useProgramsStore = create<ProgramsState>((set) => ({
   patchProgram: (id, patch) =>
     set((s) => ({
       programs: s.programs.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    })),
+  removeProgram: (id) =>
+    set((s) => ({
+      programs: s.programs.filter((p) => p.id !== id),
+      selectedId: s.selectedId === id ? null : s.selectedId,
     })),
   setQuery: (query) => set({ query }),
   toggleFilter: (id) =>

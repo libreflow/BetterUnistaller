@@ -1,7 +1,9 @@
+import { useState } from "react";
 import type { Program } from "../lib/types";
 import { formatBytes, formatDate } from "../lib/format";
-import { openFolder } from "../lib/api";
+import { forceUninstall, openFolder } from "../lib/api";
 import { STR } from "../lib/strings.fr";
+import { useProgramsStore } from "../store/programs";
 
 function TechRow({ label, value }: { label: string; value: string }) {
   return (
@@ -21,6 +23,28 @@ function TechRow({ label, value }: { label: string; value: string }) {
 }
 
 export function DetailPanel({ program }: { program: Program }) {
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const handleForceUninstall = async () => {
+    if (!window.confirm(STR.forceUninstallConfirm(program.name))) return;
+    setBusy(true);
+    setFeedback(STR.forceUninstallInProgress);
+    try {
+      const result = await forceUninstall(program);
+      if (result.succeeded) {
+        setFeedback(STR.forceUninstallSuccess);
+        useProgramsStore.getState().removeProgram(program.id);
+      } else {
+        setFeedback(STR.forceUninstallFailure);
+      }
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : STR.forceUninstallFailure);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <aside className="w-96 shrink-0 border-l border-neutral-200 dark:border-neutral-800 p-4 overflow-auto">
       <div className="flex items-center gap-3">
@@ -37,7 +61,7 @@ export function DetailPanel({ program }: { program: Program }) {
         <div className="flex justify-between"><dt className="text-neutral-500">{STR.colSize}</dt><dd>{formatBytes(program.estimatedSizeBytes)}</dd></div>
       </dl>
 
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         {program.installLocation ? (
           <button
             className="rounded-md border border-neutral-300 dark:border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-900"
@@ -56,6 +80,19 @@ export function DetailPanel({ program }: { program: Program }) {
         {program.uninstallString && (
           <TechRow label={STR.detailUninstallString} value={program.uninstallString} />
         )}
+
+        {/* F6 — action destructive : repliée dans les détails techniques,
+            jamais l'action par défaut d'un clic simple sur le programme. */}
+        <div className="mt-4 border-t border-neutral-200 dark:border-neutral-800 pt-3">
+          <button
+            className="rounded-md border border-red-300 text-red-700 dark:border-red-800 dark:text-red-400 px-3 py-1.5 text-sm hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void handleForceUninstall()}
+          >
+            {STR.forceUninstall}
+          </button>
+          {feedback && <p className="mt-2 text-xs text-neutral-500">{feedback}</p>}
+        </div>
       </details>
     </aside>
   );
