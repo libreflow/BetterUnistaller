@@ -60,9 +60,15 @@ fn read_entry(key: &RegKey, key_name: &str, scope: Scope, id_prefix: &str) -> Op
 
     let non_empty = |s: String| if s.trim().is_empty() { None } else { Some(s) };
 
+    let Some(name) = display_name else {
+        // Invariant garanti par classify_visibility (Skip déjà filtré ci-dessus) ;
+        // retour défensif au lieu d'un panic si l'invariant est un jour cassé ailleurs.
+        return None;
+    };
+
     Some(Program {
         id: format!("{id_prefix}\\{key_name}"),
-        name: display_name.unwrap(),
+        name,
         publisher: key.get_value::<String, _>("Publisher").ok().and_then(non_empty),
         version: key.get_value::<String, _>("DisplayVersion").ok().and_then(non_empty),
         install_date: install_date_raw.as_deref().and_then(parse_install_date),
