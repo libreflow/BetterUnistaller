@@ -160,9 +160,11 @@ mod tests {
         let id = format!(r"HKCU\{key_name}");
 
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let uninstall = hkcu
-            .open_subkey_with_flags(UNINSTALL_PATH, KEY_ALL_ACCESS)
-            .expect("HKCU\\...\\Uninstall doit exister sur toute machine Windows");
+        // create_subkey est idempotent : ouvre la clé si elle existe déjà (poste
+        // dev réel), la crée sinon (runner CI fraîchement provisionné).
+        let (uninstall, _) = hkcu
+            .create_subkey(UNINSTALL_PATH)
+            .expect("HKCU\\...\\Uninstall doit être accessible en écriture");
         let (test_key, _) = uninstall.create_subkey(key_name).unwrap();
         test_key.set_value("DisplayName", &"BU Test Entry").unwrap();
         drop(test_key);

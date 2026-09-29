@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn force_uninstall_removes_test_registry_entry_and_temp_folder() {
         use std::fs;
-        use winreg::enums::{HKEY_CURRENT_USER, KEY_ALL_ACCESS};
+        use winreg::enums::HKEY_CURRENT_USER;
         use winreg::RegKey;
 
         let key_name = "BU_force_uninstall_test_entry";
@@ -178,11 +178,10 @@ mod tests {
         fs::write(dir.join("f.txt"), b"x").unwrap();
 
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let uninstall = hkcu
-            .open_subkey_with_flags(
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-                KEY_ALL_ACCESS,
-            )
+        // create_subkey est idempotent : ouvre la clé si elle existe déjà (poste
+        // dev réel), la crée sinon (runner CI fraîchement provisionné).
+        let (uninstall, _) = hkcu
+            .create_subkey(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall")
             .unwrap();
         let (test_key, _) = uninstall.create_subkey(key_name).unwrap();
         test_key.set_value("DisplayName", &"BU Force Test").unwrap();
