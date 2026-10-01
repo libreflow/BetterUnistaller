@@ -70,8 +70,8 @@ export type ForceUninstallOutcome =
 /// programme est machine-wide et nécessite l'élévation UAC, l'app se ferme
 /// pour relancer une instance élevée qui termine l'opération — l'appelant
 /// reçoit alors `{ outcome: "elevationRequested" }`.
-export function forceUninstall(program: Program): Promise<ForceUninstallOutcome> {
-  return invoke<ForceUninstallOutcome>("force_uninstall", { program });
+export function forceUninstall(programId: string): Promise<ForceUninstallOutcome> {
+  return invoke<ForceUninstallOutcome>("force_uninstall", { programId });
 }
 
 /// À appeler une fois au démarrage : récupère le résultat d'une
