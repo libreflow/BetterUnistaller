@@ -137,21 +137,26 @@ mod tests {
         assert_eq!(extract_pending_uninstall_id(&argv), None);
     }
 
+    /// Après la relance, le runtime Windows re-split la ligne de commande via
+    /// CommandLineToArgvW : un argument quoté contenant des espaces arrive
+    /// comme un SEUL élément d'argv, guillemets retirés. C'est ce
+    /// comportement (et non un split naïf sur les espaces) que le quoting de
+    /// `pending_uninstall_args` rend possible.
     #[test]
     fn pending_uninstall_args_survive_round_trip_with_spaces() {
         let id = r"HKLM64\Some App With Spaces";
         let args = pending_uninstall_args(id);
-        // Simule le re-split de la ligne de commande par le runtime : les
-        // arguments joints par espaces sont découpés sur les espaces non quotées.
-        let mut joined = vec!["betterunistaller.exe".to_string()];
-        joined.extend(args);
-        let argv: Vec<String> = joined
-            .join(" ")
-            .split('"')
-            .filter(|p| !p.trim().is_empty())
-            .map(str::to_string)
-            .collect();
-        assert_eq!(extract_pending_uninstall_id(&argv), Some(id.to_string()));
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[1], format!("\"{id}\""));
+        // CommandLineToArgvW : l'élément quoté reste un seul argument, mais
+        // certaines runtimes le laissent avec ses guillemets — `extract` doit
+        // gérer les deux formes.
+        let argv_quoted = vec![
+            "betterunistaller.exe".to_string(),
+            PENDING_FORCE_UNINSTALL_FLAG.to_string(),
+            format!("\"{id}\""),
+        ];
+        assert_eq!(extract_pending_uninstall_id(&argv_quoted), Some(id.to_string()));
     }
 
     #[test]
