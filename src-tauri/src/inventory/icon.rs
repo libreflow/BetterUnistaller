@@ -151,7 +151,7 @@ fn extract_exe_icon(path: &Path) -> Option<image::RgbaImage> {
             return None;
         }
         // BGRA -> RGBA
-        for px in pixels.chunks_exact_mut(4) {
+        for px in pixels.as_chunks_mut::<4>().0 {
             px.swap(0, 2);
         }
         let full = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
