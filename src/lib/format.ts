@@ -1,11 +1,12 @@
 const UNITS = [
   { limit: 1024 ** 3, div: 1024 ** 3, suffix: "Go" },
   { limit: 1024 ** 2, div: 1024 ** 2, suffix: "Mo" },
-  { limit: 0, div: 1024, suffix: "Ko" },
+  { limit: 1024, div: 1024, suffix: "Ko" },
 ];
 
 export function formatBytes(bytes: number | null): string {
   if (bytes === null) return "—";
+  if (bytes < 1024) return `${bytes} o`;
   const unit = UNITS.find((u) => bytes >= u.limit)!;
   const value = (bytes / unit.div).toFixed(1).replace(".", ",");
   return `${value} ${unit.suffix}`;

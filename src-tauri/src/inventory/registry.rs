@@ -21,6 +21,12 @@ pub fn read_installed_programs() -> Vec<Program> {
     read_hive(&hklm, KEY_WOW64_64KEY, Scope::Machine, "HKLM64", &mut out);
     read_hive(&hklm, KEY_WOW64_32KEY, Scope::Machine, "HKLM32", &mut out);
     read_hive(&hkcu, 0, Scope::User, "HKCU", &mut out);
+    // Déduplique par (nom, version) insensible à la casse : une même app
+    // inscrite à la fois en HKLM64 et HKLM32 (vue WOW64) apparaîtrait
+    // sinon deux fois dans la liste. La première occurrence gagne —
+    // l'ordre de lecture donne HKLM64 > HKLM32 > HKCU.
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|p| seen.insert((p.name.to_ascii_lowercase(), p.version.clone())));
     out
 }
 

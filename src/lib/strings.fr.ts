@@ -21,6 +21,8 @@ export const STR = {
   detailUninstallString: "Commande de désinstallation",
   detailNoLocation: "Emplacement inconnu",
   copy: "Copier",
+  copied: "Copié",
+  copyFailed: "Copie impossible",
   forceUninstall: "Désinstallation forcée",
   forceUninstallConfirm: (name: string) =>
     `Désinstaller « ${name} » de force ? Un point de restauration système sera créé, les processus du programme seront arrêtés, puis ses fichiers et son entrée de registre seront supprimés. Cette action est réservée aux cas où la désinstallation normale a échoué.`,

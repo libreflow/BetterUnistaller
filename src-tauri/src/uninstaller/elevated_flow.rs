@@ -43,7 +43,17 @@ pub fn force_uninstall_or_request_elevation(
         Err(ForceUninstallError::ElevationRequired) => {
             match elevation::relaunch_elevated(&elevation::pending_uninstall_args(&program.id)) {
                 Ok(()) => {
-                    app.exit(0);
+                    // Diffère la fermeture de l'app : la réponse IPC doit
+                    // avoir le temps d'atteindre le frontend avant que le
+                    // process ne disparaisse, sinon la promesse `invoke`
+                    // reste pendante et l'UI reste bloquée sur « en cours ».
+                    // Un court délai suffit, et si le process se ferme
+                    // avant la fin du délai, le résultat est le même que
+                    // le `app.exit(0)` immédiat d'origine.
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                        app.exit(0);
+                    });
                     ForceUninstallOutcome::ElevationRequested
                 }
                 Err(message) => ForceUninstallOutcome::Failed { message },
