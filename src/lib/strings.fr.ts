@@ -30,4 +30,6 @@ export const STR = {
   forceUninstallProtected: (name: string) =>
     `« ${name} » est un composant protégé et ne peut pas être désinstallé de force.`,
   forceUninstallElevationRequested: "Élévation des privilèges demandée…",
+  restorePointFailed: "Attention : le point de restauration n'a pas pu être créé.",
+  locationRemovalFailed: "Attention : certains fichiers n'ont pas pu être envoyés à la corbeille.",
 } as const;
