@@ -16,14 +16,6 @@ struct RunningProcess {
     exe_path: Option<String>,
 }
 
-fn exe_name_from_entry(entry: &PROCESSENTRY32W) -> String {
-    let len = entry
-        .szExeFile
-        .iter()
-        .position(|&c| c == 0)
-        .unwrap_or(entry.szExeFile.len());
-    String::from_utf16_lossy(&entry.szExeFile[..len])
-}
 
 /// Chemin complet de l'exécutable d'un processus, via son PID. `None` si le
 /// processus n'existe plus ou si l'accès est refusé (processus système,
@@ -62,7 +54,6 @@ fn list_running_processes() -> Vec<RunningProcess> {
         };
         if Process32FirstW(snapshot, &mut entry).is_ok() {
             loop {
-                let _ = exe_name_from_entry(&entry); // conservé pour usage futur (filtrage par nom)
                 out.push(RunningProcess {
                     pid: entry.th32ProcessID,
                     exe_path: query_full_path(entry.th32ProcessID),
