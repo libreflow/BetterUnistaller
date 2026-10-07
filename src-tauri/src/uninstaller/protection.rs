@@ -37,16 +37,23 @@ pub fn is_protected(name: &str) -> bool {
 /// doit rester protégé, et ces chemins sont relocalisables.
 fn protected_location_prefixes() -> Vec<String> {
     let mut prefixes = Vec::new();
-    let mut push = |var: &str, fallback: &str| {
-        let value = std::env::var_os(var)
+    let resolve = |var: &str, fallback: &str| {
+        std::env::var_os(var)
             .map(|v| v.to_string_lossy().into_owned())
-            .unwrap_or_else(|| fallback.to_string());
-        prefixes.push(value.trim_end_matches('\\').to_ascii_lowercase());
+            .unwrap_or_else(|| fallback.to_string())
     };
-    push("SystemDrive", "C:");
-    push("ProgramFiles", r"C:\Program Files");
-    push("PROGRAMFILES(X86)", r"C:\Program Files (x86)");
-    push("ProgramData", r"C:\ProgramData");
+    // Le lecteur système seul ne doit RIEN protéger (sinon tout le disque
+    // C: serait verrouillé) : il sert uniquement à construire `<drive>\Windows`.
+    let system_drive = resolve("SystemDrive", "C:");
+    let system_drive = system_drive.trim_end_matches('\\');
+    prefixes.push(format!(r"{system_drive}\Windows").to_ascii_lowercase());
+    for (var, fallback) in [
+        ("ProgramFiles", r"C:\Program Files"),
+        ("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
+        ("ProgramData", r"C:\ProgramData"),
+    ] {
+        prefixes.push(resolve(var, fallback).trim_end_matches('\\').to_ascii_lowercase());
+    }
     prefixes
 }
 
@@ -110,12 +117,12 @@ mod tests {
     #[test]
     fn protects_current_system_drive_root() {
         let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
-        let windows = format!("{drive}\\\\Windows");
+        let windows = format!("{drive}\\Windows");
         assert!(
             is_protected_location(&windows),
             "{windows} doit être protégé"
         );
-        let program_files = format!("{drive}\\\\Program Files\\\\Foo");
+        let program_files = format!("{drive}\\Program Files\\Foo");
         assert!(
             is_protected_location(&program_files),
             "{program_files} doit être protégé"
