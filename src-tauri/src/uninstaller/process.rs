@@ -130,7 +130,7 @@ fn terminate_pid_and_wait(pid: u32, expected_path_lower: &str) -> bool {
         let actual_path = query_full_path_of_handle(handle);
         let path_matches = actual_path
             .as_deref()
-            .is_some_and(|p| p.to_ascii_lowercase() == expected_path_lower.to_ascii_lowercase());
+            .is_some_and(|p| p.eq_ignore_ascii_case(expected_path_lower));
         if !path_matches {
             let _ = CloseHandle(handle);
             return false;
