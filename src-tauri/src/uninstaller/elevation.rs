@@ -38,17 +38,18 @@ pub fn is_elevated() -> bool {
     }
 }
 
-/// Construit la ligne d'arguments à passer à l'instance relancée pour
+/// Construit la liste d'arguments à passer à l'instance relancée pour
 /// qu'elle reprenne directement la désinstallation forcée en attente.
 /// Fonction pure séparée de `relaunch_elevated` pour rester testable sans
-/// déclencher une vraie invite UAC. L'id est quoté : les noms de clés
-/// registre contiennent fréquemment des espaces, et les arguments sont
-/// ensuite joints par des espaces dans `relaunch_elevated` (ShellExecuteW
-/// ne re-split pas les arguments quotés).
+/// déclencher une vraie invite UAC. L'id est passé brut : c'est
+/// `join_quoted` (appelé par `relaunch_elevated`) qui se charge du quoting
+/// selon les règles de `CommandLineToArgvW`. Le quoter ici aussi
+/// produirait un double-échappement (`"""id avec espace"""`) et
+/// l'instance relancée recevrait un id avec des guillemets parasites.
 pub fn pending_uninstall_args(program_id: &str) -> Vec<String> {
     vec![
         PENDING_FORCE_UNINSTALL_FLAG.to_string(),
-        format!("\"{program_id}\""),
+        program_id.to_string(),
     ]
 }
 
@@ -149,26 +150,41 @@ mod tests {
         assert_eq!(extract_pending_uninstall_id(&argv), None);
     }
 
-    /// Après la relance, le runtime Windows re-split la ligne de commande via
-    /// CommandLineToArgvW : un argument quoté contenant des espaces arrive
-    /// comme un SEUL élément d'argv, guillemets retirés. C'est ce
-    /// comportement (et non un split naïf sur les espaces) que le quoting de
-    /// `pending_uninstall_args` rend possible.
+    /// Chaînage réel de la relance : `pending_uninstall_args` produit des
+    /// arguments bruts, `join_quoted` les quote selon les règles de
+    /// `CommandLineToArgvW`, et l'instance relancée reçoit via son argv
+    /// chaque argument comme un élément distinct, guillemets retirés.
+    /// Simule ce round-trip complet (y compris id avec espaces) sans
+    /// déclencher de vraie invite UAC.
     #[test]
-    fn pending_uninstall_args_survive_round_trip_with_spaces() {
+    fn pending_uninstall_args_survive_full_round_trip_with_spaces() {
         let id = r"HKLM64\Some App With Spaces";
         let args = pending_uninstall_args(id);
-        assert_eq!(args.len(), 2);
-        assert_eq!(args[1], format!("\"{id}\""));
-        // CommandLineToArgvW : l'élément quoté reste un seul argument, mais
-        // certaines runtimes le laissent avec ses guillemets — `extract` doit
-        // gérer les deux formes.
-        let argv_quoted = vec![
+        // Arguments bruts, sans guillemets pré-additionnels.
+        assert_eq!(args[1], id);
+        let line = join_quoted(&args);
+        // Simulation du re-split CommandLineToArgvW sur la ligne quotée :
+        // chaque "..." devient un élément d'argv, guillemets retirés.
+        let argv = std::iter::once("betterunistaller.exe".to_string())
+            .chain(
+                line.split("\" \"")
+                    .map(|s| s.trim_matches('"').to_string()),
+            )
+            .collect::<Vec<_>>();
+        assert_eq!(extract_pending_uninstall_id(&argv), Some(id.to_string()));
+    }
+    /// Compatibilité descendante : si une instance relancée par une version
+    /// antérieure passe l'id déjà quoté dans son argv, `extract` doit
+    /// continuer de le gérer via `unquote`.
+    #[test]
+    fn extract_pending_uninstall_id_accepts_prequoted_value() {
+        let id = r"HKLM64\Some App";
+        let argv = vec![
             "betterunistaller.exe".to_string(),
             PENDING_FORCE_UNINSTALL_FLAG.to_string(),
             format!("\"{id}\""),
         ];
-        assert_eq!(extract_pending_uninstall_id(&argv_quoted), Some(id.to_string()));
+        assert_eq!(extract_pending_uninstall_id(&argv), Some(id.to_string()));
     }
 
     #[test]

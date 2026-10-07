@@ -6,6 +6,8 @@ describe("formatBytes", () => {
   it("affiche en Mo sous le Go", () => expect(formatBytes(52_428_800)).toBe("50,0 Mo"));
   it("affiche en Go au-dessus", () => expect(formatBytes(1_610_612_736)).toBe("1,5 Go"));
   it("affiche en Ko sous le Mo", () => expect(formatBytes(10_240)).toBe("10,0 Ko"));
+  it("affiche en octets sous le Ko", () => expect(formatBytes(512)).toBe("512 o"));
+  it("affiche 0 o pour une taille nulle", () => expect(formatBytes(0)).toBe("0 o"));
 });
 
 describe("formatDate", () => {

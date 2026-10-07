@@ -6,17 +6,24 @@ import { applyOutcome } from "../lib/forceUninstallOutcome";
 import { STR } from "../lib/strings.fr";
 
 function TechRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(STR.copied);
+    } catch {
+      setCopied(STR.copyFailed);
+    }
+  };
   return (
     <div className="mt-2">
       <p className="text-xs text-neutral-400">{label}</p>
       <div className="flex items-start gap-2">
         <code className="text-xs break-all">{value}</code>
-        <button
-          className="text-xs text-blue-600 hover:underline shrink-0"
-          onClick={() => navigator.clipboard.writeText(value)}
-        >
+        <button className="text-xs text-blue-600 hover:underline shrink-0" onClick={() => void copy()}>
           {STR.copy}
         </button>
+        {copied && <span className="text-xs text-neutral-400">{copied}</span>}
       </div>
     </div>
   );

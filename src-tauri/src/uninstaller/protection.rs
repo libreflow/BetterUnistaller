@@ -30,21 +30,44 @@ pub fn is_protected(name: &str) -> bool {
 /// ni voir ses processus tués par une désinstallation forcée. Un nom affiché
 /// (éditable dans le registre) suffit à contourner la liste de mots-clés ;
 /// vérifier aussi l'InstallLocation est un deuxième verrou indépendant.
-const PROTECTED_LOCATION_PREFIXES: &[&str] = &[
-    r"c:\windows",
-    r"c:\program files",
-    r"c:\program files (x86)",
-    r"c:\programdata",
-];
+///
+/// Les racines sont résolues dynamiquement via les variables d'environnement
+/// système (`%SystemDrive%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`,
+/// `%ProgramData%`) : un Windows installé sur un autre lecteur que `C:`
+/// doit rester protégé, et ces chemins sont relocalisables.
+fn protected_location_prefixes() -> Vec<String> {
+    let mut prefixes = Vec::new();
+    let resolve = |var: &str, fallback: &str| {
+        std::env::var_os(var)
+            .map(|v| v.to_string_lossy().into_owned())
+            .unwrap_or_else(|| fallback.to_string())
+    };
+    // Le lecteur système seul ne doit RIEN protéger (sinon tout le disque
+    // C: serait verrouillé) : il sert uniquement à construire `<drive>\Windows`.
+    let system_drive = resolve("SystemDrive", "C:");
+    let system_drive = system_drive.trim_end_matches('\\');
+    prefixes.push(format!(r"{system_drive}\Windows").to_ascii_lowercase());
+    for (var, fallback) in [
+        ("ProgramFiles", r"C:\Program Files"),
+        ("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
+        ("ProgramData", r"C:\ProgramData"),
+    ] {
+        prefixes.push(resolve(var, fallback).trim_end_matches('\\').to_ascii_lowercase());
+    }
+    prefixes
+}
 
 /// `true` si `install_location` pointe dans une racine système protégée.
 /// Comparaison insensible à la casse, préfixe de chemin (avec séparateur :
 /// `C:\Program Files\Foo` ne protège pas `C:\Program FilesFoo`).
 pub fn is_protected_location(install_location: &str) -> bool {
-    let lower = install_location.trim().trim_end_matches(['\\', '/']).to_ascii_lowercase();
-    PROTECTED_LOCATION_PREFIXES
+    let lower = install_location
+        .trim()
+        .trim_end_matches(['\\', '/'])
+        .to_ascii_lowercase();
+    protected_location_prefixes()
         .iter()
-        .any(|prefix| lower.starts_with(prefix))
+        .any(|prefix| lower == *prefix || lower.starts_with(&format!("{prefix}\\")))
 }
 
 
@@ -84,5 +107,25 @@ mod tests {
     #[test]
     fn protected_location_prefix_needs_separator_continuity() {
         assert!(!is_protected_location(r"C:\ProgramFilesFake\x"));
+    }
+
+    /// `%SystemDrive%` vaut `C:` sur la quasi-totalité des machines, mais un
+    /// Windows installé sur `D:` doit rester protégé : simule ce cas en
+    /// vérifiant que la résolution dynamique produit bien le préfixe du
+    /// lecteur courant (le test utilise le lecteur renvoyé par la variable,
+    /// quel qu'il soit).
+    #[test]
+    fn protects_current_system_drive_root() {
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        let windows = format!("{drive}\\Windows");
+        assert!(
+            is_protected_location(&windows),
+            "{windows} doit être protégé"
+        );
+        let program_files = format!("{drive}\\Program Files\\Foo");
+        assert!(
+            is_protected_location(&program_files),
+            "{program_files} doit être protégé"
+        );
     }
 }

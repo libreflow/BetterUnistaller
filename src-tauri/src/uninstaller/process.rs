@@ -6,8 +6,9 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_NAME_FORMAT,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    OpenProcess, QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
+    PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    INFINITE,
 };
 
 /// Un processus en cours d'exécution, tel qu'énuméré par Toolhelp.
@@ -76,6 +77,11 @@ fn list_running_processes() -> Vec<RunningProcess> {
 /// individuels (accès refusé, processus déjà terminé) sont ignorés : ce
 /// n'est pas à la désinstallation forcée d'échouer entièrement pour un seul
 /// processus récalcitrant, le scan de résidus F4 rattrapera ce qui reste.
+///
+/// Attends la fin effective de chaque processus terminé (`TerminateProcess`
+/// est asynchrone) : sans cela, l'envoi immédiat de l'InstallLocation à la
+/// corbeille échouerait sur des fichiers encore ouverts par des processus
+/// pas encore totalement morts.
 pub fn kill_processes_under(install_location: &str) -> u32 {
     let root = normalize_root(install_location);
     if root.is_empty() {
@@ -87,7 +93,7 @@ pub fn kill_processes_under(install_location: &str) -> u32 {
         if !path_is_under(path, &root) {
             continue;
         }
-        if terminate_pid(proc.pid) {
+        if terminate_pid_and_wait(proc.pid, &path.to_ascii_lowercase()) {
             killed += 1;
         }
     }
@@ -106,14 +112,56 @@ fn path_is_under(candidate: &str, root_lower: &str) -> bool {
     candidate_path.starts_with(root_path)
 }
 
-fn terminate_pid(pid: u32) -> bool {
+/// Termine le processus `pid` et attends sa fin effective. Retourne `true`
+/// uniquement si `TerminateProcess` a réussi ET que le handle a été signalé
+/// comme terminé — le fichier exécutable n'est alors plus verrouillé et
+/// peut être envoyé à la corbeille sans erreur de partage.
+fn terminate_pid_and_wait(pid: u32, expected_path_lower: &str) -> bool {
     unsafe {
-        let Ok(handle) = OpenProcess(PROCESS_TERMINATE, false, pid) else {
+        let Ok(handle) = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
             return false;
         };
+        // Re-vérifie le chemin de l'exécutable APRÈS ouverture du handle :
+        // entre l'énumération Toolhelp et l'ouverture, le PID peut avoir été
+        // réattribué à un autre processus ; tuer ce handle-là tuerait un
+        // processus unrelated. La vérification sur le handle ouvert est
+        // atomique avec la terminaison (le handle ne peut plus changer
+        // d'identité).
+        let actual_path = query_full_path_of_handle(handle);
+        let path_matches = actual_path
+            .as_deref()
+            .is_some_and(|p| p.eq_ignore_ascii_case(expected_path_lower));
+        if !path_matches {
+            let _ = CloseHandle(handle);
+            return false;
+        }
         let ok = TerminateProcess(handle, 1).is_ok();
+        if ok {
+            // Wait infinite est sûr : le processus a déjà reçu l'ordre de
+            // terminaison par le biais de TerminateProcess ; si l'attente
+            // échoue (cas très improbable), on retourne quand même true :
+            // la terminaison a bien été demandée et acceptée par le noyau.
+            let _ = WaitForSingleObject(handle, INFINITE);
+        }
         let _ = CloseHandle(handle);
         ok
+    }
+}
+
+/// Chemin complet de l'exécutable d'un processus via son handle déjà ouvert
+/// (évite la fenêtre de réattribution de PID entre OpenProcess et la requête).
+fn query_full_path_of_handle(handle: HANDLE) -> Option<String> {
+    unsafe {
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_FORMAT(0),
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        );
+        ok.ok()?;
+        Some(String::from_utf16_lossy(&buf[..len as usize]))
     }
 }
 

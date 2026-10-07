@@ -8,17 +8,40 @@ pub enum EntryVisibility {
 }
 
 /// InstallDate registre "YYYYMMDD" -> ISO "YYYY-MM-DD".
+/// Valide le jour réel du mois (y compris années bissextiles) : une date
+/// invalide comme "20260231" doit être rejetée plutôt que produire un
+/// ISO fictif qui fausserait le tri et l'affichage.
 pub fn parse_install_date(raw: &str) -> Option<String> {
     let raw = raw.trim();
     if raw.len() != 8 || !raw.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
+    let year: u32 = raw[0..4].parse().ok()?;
     let month: u32 = raw[4..6].parse().ok()?;
     let day: u32 = raw[6..8].parse().ok()?;
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
         return None;
     }
-    Some(format!("{}-{}-{}", &raw[0..4], &raw[4..6], &raw[6..8]))
+    Some(format!("{year:04}-{month:02}-{day:02}"))
+}
+
+fn is_leap_year(year: u32) -> bool {
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
+}
+
+fn days_in_month(year: u32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if is_leap_year(year) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 0,
+    }
 }
 
 /// EstimatedSize (REG_DWORD) est exprimé en Kio.
@@ -81,6 +104,10 @@ mod tests {
         assert_eq!(parse_install_date("2026-07-31"), None); // déjà formatée = inattendu
         assert_eq!(parse_install_date("abcdefgh"), None);
         assert_eq!(parse_install_date("20261332"), None); // mois 13, jour 32
+        assert_eq!(parse_install_date("20260231"), None); // 31 février n'existe pas
+        assert_eq!(parse_install_date("20230229"), None); // 2023 non bissextile
+        assert_eq!(parse_install_date("20240229"), Some("2024-02-29".into())); // bissextile
+        assert_eq!(parse_install_date("20240431"), None); // avril = 30 jours
     }
 
     #[test]
