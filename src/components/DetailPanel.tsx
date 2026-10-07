@@ -31,7 +31,7 @@ export function DetailPanel({ program }: { program: Program }) {
     setBusy(true);
     setFeedback(STR.forceUninstallInProgress);
     try {
-      const outcome = await forceUninstall(program);
+      const outcome = await forceUninstall(program.id);
       applyOutcome(outcome, program.id, setFeedback);
     } catch (err) {
       setFeedback(err instanceof Error ? err.message : STR.forceUninstallFailure);

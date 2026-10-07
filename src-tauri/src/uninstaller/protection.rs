@@ -26,6 +26,28 @@ pub fn is_protected(name: &str) -> bool {
         .any(|kw| lower.contains(kw))
 }
 
+/// Racines système dont le contenu ne doit jamais être envoyé à la corbeille
+/// ni voir ses processus tués par une désinstallation forcée. Un nom affiché
+/// (éditable dans le registre) suffit à contourner la liste de mots-clés ;
+/// vérifier aussi l'InstallLocation est un deuxième verrou indépendant.
+const PROTECTED_LOCATION_PREFIXES: &[&str] = &[
+    r"c:\windows",
+    r"c:\program files",
+    r"c:\program files (x86)",
+    r"c:\programdata",
+];
+
+/// `true` si `install_location` pointe dans une racine système protégée.
+/// Comparaison insensible à la casse, préfixe de chemin (avec séparateur :
+/// `C:\Program Files\Foo` ne protège pas `C:\Program FilesFoo`).
+pub fn is_protected_location(install_location: &str) -> bool {
+    let lower = install_location.trim().trim_end_matches(['\\', '/']).to_ascii_lowercase();
+    PROTECTED_LOCATION_PREFIXES
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,5 +64,25 @@ mod tests {
         assert!(!is_protected("Adobe Creative Cloud"));
         assert!(!is_protected("7-Zip"));
         assert!(!is_protected(""));
+    }
+
+    #[test]
+    fn protects_system_install_roots_case_insensitively() {
+        assert!(is_protected_location(r"C:\Windows"));
+        assert!(is_protected_location(r"c:\program files\Foo"));
+        assert!(is_protected_location(r"C:\Program Files (x86)\Bar"));
+        assert!(is_protected_location(r"C:\ProgramData\Baz "));
+    }
+
+    #[test]
+    fn does_not_protect_ordinary_locations() {
+        assert!(!is_protected_location(r"C:\Users\me\AppData\Local\Foo"));
+        assert!(!is_protected_location(r"D:\Apps\Bar"));
+        assert!(!is_protected_location(""));
+    }
+
+    #[test]
+    fn protected_location_prefix_needs_separator_continuity() {
+        assert!(!is_protected_location(r"C:\ProgramFilesFake\x"));
     }
 }

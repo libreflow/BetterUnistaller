@@ -32,9 +32,13 @@ pub struct PendingUninstallState(pub Mutex<Option<ForceUninstallOutcome>>);
 /// courante) plutôt que d'échouer sèchement — cahier des charges §5.3.
 pub fn force_uninstall_or_request_elevation(
     app: &tauri::AppHandle,
-    program: &Program,
+    program_id: &str,
 ) -> ForceUninstallOutcome {
-    match force::force_uninstall(program) {
+    let program = match lookup_program(program_id) {
+        Ok(program) => program,
+        Err(message) => return ForceUninstallOutcome::Failed { message },
+    };
+    match force::force_uninstall(&program) {
         Ok(result) => ForceUninstallOutcome::Completed { result },
         Err(ForceUninstallError::ElevationRequired) => {
             match elevation::relaunch_elevated(&elevation::pending_uninstall_args(&program.id)) {
@@ -57,11 +61,9 @@ pub fn force_uninstall_or_request_elevation(
 /// le frontend une fois l'interface chargée.
 pub fn run_pending_uninstall_if_any(args: &[String]) -> Option<ForceUninstallOutcome> {
     let id = elevation::extract_pending_uninstall_id(args)?;
-    let programs = crate::inventory::registry::read_installed_programs();
-    let Some(program) = programs.into_iter().find(|p| p.id == id) else {
-        return Some(ForceUninstallOutcome::Failed {
-            message: format!("programme introuvable après relance élevée : {id}"),
-        });
+    let program = match lookup_program(&id) {
+        Ok(program) => program,
+        Err(message) => return Some(ForceUninstallOutcome::Failed { message }),
     };
     Some(match force::force_uninstall(&program) {
         Ok(result) => ForceUninstallOutcome::Completed { result },
@@ -69,6 +71,17 @@ pub fn run_pending_uninstall_if_any(args: &[String]) -> Option<ForceUninstallOut
             message: err.to_string(),
         },
     })
+}
+
+/// Récupère le programme à partir de son id registre uniquement — les
+/// autres champs (nom, InstallLocation, scope) sont relus depuis le registre,
+/// jamais pris depuis le frontend : celui-ci ne peut ainsi pas faire
+/// exécuter une suppression arbitraire en forgéant un objet `Program`.
+pub fn lookup_program(program_id: &str) -> Result<Program, String> {
+    crate::inventory::registry::read_installed_programs()
+        .into_iter()
+        .find(|p| p.id == program_id)
+        .ok_or_else(|| format!("programme introuvable dans le registre : {program_id}"))
 }
 
 #[cfg(test)]

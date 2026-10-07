@@ -75,7 +75,12 @@ pub fn requires_elevation(program: &Program) -> bool {
 /// disparaît de la liste, donc son échec fait échouer l'opération globale
 /// même si les étapes précédentes ont réussi.
 pub fn force_uninstall(program: &Program) -> Result<ForceUninstallResult, ForceUninstallError> {
-    if protection::is_protected(&program.name) {
+    if protection::is_protected(&program.name)
+        || program
+            .install_location
+            .as_deref()
+            .is_some_and(protection::is_protected_location)
+    {
         return Err(ForceUninstallError::Other(format!(
             "« {} » fait partie des composants protégés et ne peut pas être désinstallé de force",
             program.name
@@ -147,6 +152,14 @@ mod tests {
     #[test]
     fn refuses_to_force_uninstall_a_protected_component() {
         let p = program("Microsoft Edge WebView2 Runtime", r"HKCU\Whatever", None);
+        let result = force_uninstall(&p);
+        assert!(matches!(result, Err(ForceUninstallError::Other(_))));
+    }
+
+    #[test]
+    fn refuses_to_force_uninstall_a_program_in_a_protected_location() {
+        let mut p = program("Some Ordinary Name", r"HKLM64\SomeApp", Some(r"C:\Program Files\SomeApp"));
+        p.scope = Scope::Machine;
         let result = force_uninstall(&p);
         assert!(matches!(result, Err(ForceUninstallError::Other(_))));
     }

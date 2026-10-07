@@ -22,8 +22,8 @@ fn list_programs() -> Vec<models::Program> {
 /// et que le process courant ne l'a pas déjà (§5.3) : dans ce cas l'app se
 /// ferme pour relancer une instance élevée qui termine l'opération.
 #[tauri::command]
-fn force_uninstall(app: tauri::AppHandle, program: models::Program) -> ForceUninstallOutcome {
-    force_uninstall_or_request_elevation(&app, &program)
+fn force_uninstall(app: tauri::AppHandle, program_id: String) -> ForceUninstallOutcome {
+    force_uninstall_or_request_elevation(&app, &program_id)
 }
 
 /// Récupère (et consomme) le résultat d'une désinstallation forcée qui a
@@ -33,7 +33,11 @@ fn force_uninstall(app: tauri::AppHandle, program: models::Program) -> ForceUnin
 fn take_pending_uninstall_outcome(
     state: tauri::State<PendingUninstallState>,
 ) -> Option<ForceUninstallOutcome> {
-    state.0.lock().unwrap().take()
+    state
+        .0
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
