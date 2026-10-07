@@ -23,7 +23,7 @@ fn list_programs() -> Vec<models::Program> {
 /// ferme pour relancer une instance élevée qui termine l'opération.
 #[tauri::command]
 fn force_uninstall(app: tauri::AppHandle, program_id: String) -> ForceUninstallOutcome {
-    force_uninstall_or_request_elevation(&app, &program_id)
+    force_uninstall_or_request_elevation(app, &program_id)
 }
 
 /// Récupère (et consomme) le résultat d'une désinstallation forcée qui a

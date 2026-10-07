@@ -31,7 +31,7 @@ pub struct PendingUninstallState(pub Mutex<Option<ForceUninstallOutcome>>);
 /// requis, sinon demande l'élévation (relance + fermeture de l'instance
 /// courante) plutôt que d'échouer sèchement — cahier des charges §5.3.
 pub fn force_uninstall_or_request_elevation(
-    app: &tauri::AppHandle,
+    app: tauri::AppHandle,
     program_id: &str,
 ) -> ForceUninstallOutcome {
     let program = match lookup_program(program_id) {
@@ -50,6 +50,8 @@ pub fn force_uninstall_or_request_elevation(
                     // Un court délai suffit, et si le process se ferme
                     // avant la fin du délai, le résultat est le même que
                     // le `app.exit(0)` immédiat d'origine.
+                    // Le handle est cloné et déplacé dans le thread : il
+                    // est `Clone + 'static`, contrairement à la référence.
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(300));
                         app.exit(0);
