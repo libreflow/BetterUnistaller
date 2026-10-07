@@ -61,6 +61,18 @@ fn encode_wide_nul(s: &str) -> Vec<u16> {
         .collect()
 }
 
+/// Joint les arguments en une ligne de commandes Windows valide : chaque
+/// argument est guillemété et les guillemets internes sont échappés par
+/// doublement (règles standard de `CommandLineToArgvW`). Sans cela, un id de
+/// clé registre contenant une espace (ex. `HKLM64\\My App`) serait coupé en
+/// deux arguments par l'instance relancée et la reprise échouerait.
+fn join_quoted(args: &[String]) -> String {
+    args.iter()
+        .map(|a| format!("\"{}\"", a.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Relance l'exécutable courant avec élévation UAC (verbe `runas`), en lui
 /// passant les arguments de reprise de contexte, puis termine le process non
 /// élevé courant. C'est à l'appelant (commande Tauri) de quitter l'app juste
@@ -74,7 +86,7 @@ pub fn relaunch_elevated(args: &[String]) -> Result<(), String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("chemin de l'exécutable introuvable : {e}"))?;
     let exe_wide = encode_wide_nul(exe.to_string_lossy().as_ref());
-    let params = args.join(" ");
+    let params = join_quoted(args);
     let params_wide = encode_wide_nul(&params);
     let verb_wide = encode_wide_nul("runas");
 
@@ -118,6 +130,26 @@ mod tests {
     fn extract_pending_uninstall_id_returns_none_when_flag_absent() {
         let argv = vec!["betterunistaller.exe".to_string()];
         assert_eq!(extract_pending_uninstall_id(&argv), None);
+    }
+
+    #[test]
+    fn join_quoted_keeps_arguments_with_spaces_whole() {
+        let line = join_quoted(&[
+            PENDING_FORCE_UNINSTALL_FLAG.to_string(),
+            r"HKLM64\\My App".to_string(),
+        ]);
+        assert_eq!(line, "\"--force-uninstall-id\" \"HKLM64\\\\My App\"");
+        let parts = line.split("\" \"").map(|s| s.trim_matches('"'));
+        assert_eq!(
+            parts.collect::<Vec<_>>(),
+            vec![PENDING_FORCE_UNINSTALL_FLAG, r"HKLM64\\My App"]
+        );
+    }
+
+    #[test]
+    fn join_quoted_escapes_inner_quotes_by_doubling() {
+        let line = join_quoted(&["a\"b".to_string()]);
+        assert_eq!(line, "\"a\"\"b\"");
     }
 
     #[test]

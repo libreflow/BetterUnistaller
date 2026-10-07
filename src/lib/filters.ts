@@ -7,9 +7,11 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 const PREDICATES: Record<FilterId, (p: Program, nowIso: string) => boolean> = {
   large: (p) => p.estimatedSizeBytes !== null && p.estimatedSizeBytes > ONE_GIB,
-  recent: (p, nowIso) =>
-    p.installDate !== null &&
-    Date.parse(nowIso) - Date.parse(p.installDate) < THIRTY_DAYS_MS,
+  recent: (p, nowIso) => {
+    if (p.installDate === null) return false;
+    const delta = Date.parse(nowIso) - Date.parse(p.installDate);
+    return delta >= 0 && delta < THIRTY_DAYS_MS;
+  },
   noPublisher: (p) => p.publisher === null,
   userScope: (p) => p.scope === "user",
 };

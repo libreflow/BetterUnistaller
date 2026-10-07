@@ -15,10 +15,20 @@ export function applyOutcome(
   switch (outcome.outcome) {
     case "completed":
       if (outcome.result.succeeded) {
-        setFeedback(STR.forceUninstallSuccess);
+        const warnings = outcome.result.steps
+          .filter((s) => s.step === "restorePointFailed" || s.step === "installLocationRemovalFailed")
+          .map((s) => (s.step === "restorePointFailed" ? STR.restorePointFailed : STR.locationRemovalFailed))
+          .join(" ");
+        const message = warnings ? `${STR.forceUninstallSuccess} ${warnings}` : STR.forceUninstallSuccess;
+        setFeedback(message);
         if (programId) useProgramsStore.getState().removeProgram(programId);
       } else {
-        setFeedback(STR.forceUninstallFailure);
+        const failure = outcome.result.steps.find((s) => s.step === "registryKeyRemovalFailed");
+        setFeedback(
+          failure && failure.step === "registryKeyRemovalFailed"
+            ? `${STR.forceUninstallFailure} ${failure.message}`
+            : STR.forceUninstallFailure
+        );
       }
       return;
     case "elevationRequested":

@@ -26,7 +26,8 @@ describe("applyFilters", () => {
     const recent = prog({ installDate: "2026-07-15" });
     const old = prog({ installDate: "2026-01-01" });
     const unknown = prog({ installDate: null });
-    expect(applyFilters([recent, old, unknown], new Set(["recent"]), NOW)).toEqual([recent]);
+    const future = prog({ installDate: "2026-12-31" });
+    expect(applyFilters([recent, old, unknown, future], new Set(["recent"]), NOW)).toEqual([recent]);
   });
   it("noPublisher : éditeur absent", () => {
     const anon = prog({ publisher: null });
