@@ -146,6 +146,14 @@ pub fn export_text() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+    /// Les tests qui écrivent dans `BU_JOURNAL_TEST_PATH` (variable
+    /// d'environnement globale au process) doivent être exclusivement
+    /// mutuels : sur le CI, cargo test exécute les tests en parallèle et
+    /// deux tests du module se battraient pour la même variable. Le
+    /// pattern `Mutex::new(())` + lock maintenu pendant le test est la
+    /// façon idiomatique de sérialiser des tests Rust.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
     use super::*;
 
     fn sample() -> JournalEntry {
@@ -195,6 +203,7 @@ mod tests {
 
     #[test]
     fn record_writes_json_line() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let _path = isolated_journal("record");
         let path = record(&sample()).expect("l'écriture doit réussir");
         assert!(path.to_string_lossy().contains("bu_journal_test_record.log"));
@@ -208,6 +217,7 @@ mod tests {
 
     #[test]
     fn read_all_returns_recent_entries_first() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let _p = isolated_journal("read_all");
         let e1 = JournalEntry {
             timestamp: "2026-10-07T10:00:00Z".into(),
@@ -233,6 +243,7 @@ mod tests {
 
     #[test]
     fn export_text_joins_readable_lines() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let _p = isolated_journal("export");
         let _ = record(&sample());
         let text = export_text().expect("l'export ne doit pas échouer");
@@ -242,6 +253,7 @@ mod tests {
 
     #[test]
     fn read_all_on_missing_journal_is_empty() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let _p = isolated_journal("missing");
         // Pas de record() : le journal n'existe pas.
         assert!(read_all().is_empty());
@@ -250,6 +262,7 @@ mod tests {
 
     #[test]
     fn record_survives_missing_localappdata() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // LOCALAPPDATA absente ET pas de surcharge de test : l'écriture doit
         // échouer proprement (Err), pas paniquer.
         std::env::remove_var("LOCALAPPDATA");
