@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 pub mod inventory;
 pub mod models;
+pub mod safeguard;
 pub mod uninstaller;
 
 use uninstaller::elevated_flow::{
@@ -40,6 +41,20 @@ fn take_pending_uninstall_outcome(
         .take()
 }
 
+/// Journal des opérations (F7) : entrées les plus récentes en tête,
+/// pour l'écran de consultation dans l'application.
+#[tauri::command]
+fn get_journal_entries() -> Vec<safeguard::journal::JournalEntry> {
+    safeguard::journal::read_all()
+}
+
+/// Journal des opérations (F7) : export texte complet (une ligne lisible par
+/// opération), prêt à être sauvegardé ou partagé pour du support.
+#[tauri::command]
+fn export_journal_text() -> Result<String, String> {
+    safeguard::journal::export_text()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
@@ -53,7 +68,9 @@ pub fn run() {
             force_uninstall,
             take_pending_uninstall_outcome,
             inventory::size::compute_sizes,
-            inventory::icon::load_icons
+            inventory::icon::load_icons,
+            get_journal_entries,
+            export_journal_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
