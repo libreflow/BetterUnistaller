@@ -1,5 +1,6 @@
 use crate::inventory::registry::delete_uninstall_key;
 use crate::models::{Program, Scope};
+use crate::safeguard::journal::{self, JournalEntry};
 use crate::uninstaller::{cleanup, elevation, process, protection, restore_point};
 
 /// Étape du déroulement de la désinstallation forcée, reportée au frontend
@@ -124,7 +125,43 @@ pub fn force_uninstall(program: &Program) -> Result<ForceUninstallResult, ForceU
         }
     };
 
+    // Journal des opérations (F7) : chaque désinstallation forcée est
+    // consignée, réussie ou non. Un échec d'écriture du journal est toléré :
+    // le journal est un garde-fou annexe, il ne doit jamais faire échouer
+    // l'opération qu'il trace.
+    let entry = JournalEntry {
+        timestamp: journal::iso_utc_now(),
+        program_name: program.name.clone(),
+        operation: "force_uninstall".to_string(),
+        succeeded,
+        details: steps.iter().map(step_summary).collect::<Vec<String>>(),
+    };
+    let _ = journal::record(&entry);
+
     Ok(ForceUninstallResult { steps, succeeded })
+}
+
+/// Résumé lisible d'une étape de désinstallation forcée, pour le journal.
+fn step_summary(step: &ForceUninstallStep) -> String {
+    match step {
+        ForceUninstallStep::RestorePointCreated => "point de restauration créé".to_string(),
+        ForceUninstallStep::RestorePointFailed { message } => {
+            format!("point de restauration impossible : {message}")
+        }
+        ForceUninstallStep::ProcessesTerminated { count } => {
+            format!("{count} processus terminé(s)")
+        }
+        ForceUninstallStep::InstallLocationRemoved => {
+            "dossier d'installation envoyé à la corbeille".to_string()
+        }
+        ForceUninstallStep::InstallLocationRemovalFailed { message } => {
+            format!("suppression du dossier impossible : {message}")
+        }
+        ForceUninstallStep::RegistryKeyRemoved => "clé de registre supprimée".to_string(),
+        ForceUninstallStep::RegistryKeyRemovalFailed { message } => {
+            format!("suppression de la clé impossible : {message}")
+        }
+    }
 }
 
 #[cfg(test)]
