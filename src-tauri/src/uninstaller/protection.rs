@@ -1,10 +1,11 @@
-/// Liste de protection F7 — "composants Windows, pilotes, runtimes
-/// critiques [...] ces entrées ne sont jamais proposées à la désinstallation
-/// forcée". Non exhaustive par nature (impossible de couvrir tous les
-/// runtimes existants), mais couvre les cas les plus dangereux : supprimer
-/// WebView2 casserait BetterUnistaller lui-même (Tauri en dépend), supprimer
-/// le runtime Visual C++ ou .NET casserait un grand nombre d'autres
-/// applications installées.
+/// Liste de protection F7 — « composants Windows, pilotes, runtimes
+/// critiques, antivirus […] ces entrées ne sont jamais proposées à la
+/// désinstallation forcée ». Non exhaustive par nature (impossible de couvrir
+/// tous les runtimes et antivirus existants), mais couvre les cas les plus
+/// dangereux : supprimer WebView2 casserait BetterUnistaller lui-même
+/// (Tauri en dépend), supprimer le runtime Visual C++ ou .NET casserait un
+/// grand nombre d'autres applications installées, supprimer un antivirus
+/// laisserait la machine sans protection temps réel.
 ///
 /// Comparaison insensible à la casse sur le nom affiché du programme.
 const PROTECTED_NAME_KEYWORDS: &[&str] = &[
@@ -15,6 +16,8 @@ const PROTECTED_NAME_KEYWORDS: &[&str] = &[
     ".net desktop runtime",
     "windows security",
     "microsoft defender",
+    "antivirus",
+    "anti-virus",
 ];
 
 /// `true` si `name` correspond à un composant protégé qui ne doit jamais
@@ -31,12 +34,24 @@ pub fn is_protected(name: &str) -> bool {
 /// (éditable dans le registre) suffit à contourner la liste de mots-clés ;
 /// vérifier aussi l'InstallLocation est un deuxième verrou indépendant.
 ///
+/// Deux catégories distinctes (cahier des charges §F6/§F7) :
+/// - sous-arbres intégralement protégés : `<drive>\Windows` (composants
+///   système, pilotes, WinSxS) et `ProgramData\Microsoft\Windows` (menus
+///   Démarrer, tiles) ;
+/// - racines protégées « en elles-mêmes » seulement (`ProgramFiles`,
+///   `ProgramFiles(x86)`, `ProgramData`) : une clé Uninstall qui prétend
+///   s'installer dans la racine même est suspecte et ne doit jamais pouvoir
+///   vider celle-ci, mais les dossiers d'applications légitimes dedans
+///   doivent rester supprimables — c'est précisément le cas d'usage de la
+///   désinstallation forcée (§F6 : « suppression de l'InstallLocation »).
+///   Protéger tout le sous-arbre rendrait la F6 inutilisable pour les apps
+///   machine-wide standard.
+///
 /// Les racines sont résolues dynamiquement via les variables d'environnement
 /// système (`%SystemDrive%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`,
 /// `%ProgramData%`) : un Windows installé sur un autre lecteur que `C:`
 /// doit rester protégé, et ces chemins sont relocalisables.
-fn protected_location_prefixes() -> Vec<String> {
-    let mut prefixes = Vec::new();
+fn full_subtree_prefixes() -> Vec<String> {
     let resolve = |var: &str, fallback: &str| {
         std::env::var_os(var)
             .map(|v| v.to_string_lossy().into_owned())
@@ -46,30 +61,48 @@ fn protected_location_prefixes() -> Vec<String> {
     // C: serait verrouillé) : il sert uniquement à construire `<drive>\Windows`.
     let system_drive = resolve("SystemDrive", "C:");
     let system_drive = system_drive.trim_end_matches('\\');
-    prefixes.push(format!(r"{system_drive}\Windows").to_ascii_lowercase());
-    for (var, fallback) in [
+    vec![
+        format!(r"{system_drive}\Windows").to_ascii_lowercase(),
+        format!(r"{system_drive}\ProgramData\Microsoft\Windows").to_ascii_lowercase(),
+    ]
+}
+
+fn roots_protected_as_is() -> Vec<String> {
+    let resolve = |var: &str, fallback: &str| {
+        std::env::var_os(var)
+            .map(|v| v.to_string_lossy().into_owned())
+            .unwrap_or_else(|| fallback.to_string())
+    };
+    [
         ("ProgramFiles", r"C:\Program Files"),
         ("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
         ("ProgramData", r"C:\ProgramData"),
-    ] {
-        prefixes.push(resolve(var, fallback).trim_end_matches('\\').to_ascii_lowercase());
-    }
-    prefixes
+    ]
+    .iter()
+    .map(|(var, fallback)| {
+        resolve(var, fallback)
+            .trim_end_matches('\\')
+            .to_ascii_lowercase()
+    })
+    .collect()
 }
 
 /// `true` si `install_location` pointe dans une racine système protégée.
 /// Comparaison insensible à la casse, préfixe de chemin (avec séparateur :
-/// `C:\Program Files\Foo` ne protège pas `C:\Program FilesFoo`).
+/// `C:\WindowsFoo` ne doit pas matcher le préfixe `C:\Windows`).
 pub fn is_protected_location(install_location: &str) -> bool {
     let lower = install_location
         .trim()
         .trim_end_matches(['\\', '/'])
         .to_ascii_lowercase();
-    protected_location_prefixes()
+    if full_subtree_prefixes()
         .iter()
         .any(|prefix| lower == *prefix || lower.starts_with(&format!("{prefix}\\")))
+    {
+        return true;
+    }
+    roots_protected_as_is().iter().any(|root| lower == *root)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -90,11 +123,31 @@ mod tests {
     }
 
     #[test]
-    fn protects_system_install_roots_case_insensitively() {
+    fn protects_antivirus_products() {
+        assert!(is_protected("Avast Free Antivirus"));
+        assert!(is_protected("Kaspersky Anti-Virus"));
+    }
+
+    #[test]
+    fn protects_system_roots_themselves_but_not_app_subfolders() {
+        // Les racines exactes : une entrée qui prétend s'installer DANS la
+        // racine elle-même ne doit jamais pouvoir vider toute la racine.
         assert!(is_protected_location(r"C:\Windows"));
-        assert!(is_protected_location(r"c:\program files\Foo"));
-        assert!(is_protected_location(r"C:\Program Files (x86)\Bar"));
-        assert!(is_protected_location(r"C:\ProgramData\Baz "));
+        assert!(is_protected_location(r"c:\program files"));
+        assert!(is_protected_location(r"C:\Program Files (x86)"));
+        assert!(is_protected_location(r"C:\ProgramData"));
+        // Tout le sous-arbre Windows : composants système, pilotes, WinSxS.
+        assert!(is_protected_location(r"C:\Windows\System32\drivers"));
+        assert!(is_protected_location(r"C:\Windows\WinSxS"));
+        // Données système de l'OS dans ProgramData (menu Démarrer, etc.).
+        assert!(is_protected_location(
+            r"C:\ProgramData\Microsoft\Windows\Start Menu"
+        ));
+        // ... mais PAS les dossiers d'apps légitimes (F6 doit pouvoir
+        // supprimer l'InstallLocation d'une app machine-wide standard) :
+        assert!(!is_protected_location(r"C:\Program Files\Foo"));
+        assert!(!is_protected_location(r"C:\Program Files (x86)\Bar"));
+        assert!(!is_protected_location(r"C:\ProgramData\Baz "));
     }
 
     #[test]
@@ -122,10 +175,10 @@ mod tests {
             is_protected_location(&windows),
             "{windows} doit être protégé"
         );
-        let program_files = format!("{drive}\\Program Files\\Foo");
+        let program_files_root = format!("{drive}\\Program Files");
         assert!(
-            is_protected_location(&program_files),
-            "{program_files} doit être protégé"
+            is_protected_location(&program_files_root),
+            "{program_files_root} doit être protégé"
         );
     }
 }

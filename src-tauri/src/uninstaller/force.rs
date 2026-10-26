@@ -195,7 +195,16 @@ mod tests {
 
     #[test]
     fn refuses_to_force_uninstall_a_program_in_a_protected_location() {
-        let mut p = program("Some Ordinary Name", r"HKLM64\SomeApp", Some(r"C:\Program Files\SomeApp"));
+        // `C:\Windows\...` est un sous-arbre intégralement protégé — une app
+        // qui s'y déclare ne doit pas pouvoir être désinstallée de force.
+        // (Note : `C:\Program Files\SomeApp` doit AU CONTRAIRE rester
+        // supprimable, cf. les tests de protection.rs — c'est le cas d'usage
+        // normal de la F6 pour une app machine-wide.)
+        let mut p = program(
+            "Some Ordinary Name",
+            r"HKLM64\\SomeApp",
+            Some(r"C:\Windows\SomeApp"),
+        );
         p.scope = Scope::Machine;
         let result = force_uninstall(&p);
         assert!(matches!(result, Err(ForceUninstallError::Other(_))));
