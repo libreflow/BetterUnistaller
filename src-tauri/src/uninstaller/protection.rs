@@ -101,7 +101,7 @@ pub fn is_protected_location(install_location: &str) -> bool {
     {
         return true;
     }
-    roots_protected_as_is().iter().any(|root| lower == *root)
+    roots_protected_as_is().contains(&lower)
 }
 
 #[cfg(test)]
